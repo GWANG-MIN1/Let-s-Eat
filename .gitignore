@@ -33,3 +33,8 @@ yarn-error.*
 
 # typescript
 *.tsbuildinfo
+
+# server
+server/node_modules/
+server/letseat.db*
+.env

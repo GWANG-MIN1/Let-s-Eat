@@ -1,105 +1,60 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  View,
-  Text,
-  TextInput,
-  FlatList,
-  StyleSheet,
-  KeyboardAvoidingView,
-  Platform,
-  TouchableOpacity,
-  Keyboard,
-  Modal,
-  Image,
+  View, Text, TextInput, FlatList, StyleSheet,
+  KeyboardAvoidingView, Platform, TouchableOpacity, Modal, Alert,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { getAuth, WS_URL, getRoomMessages } from '../services/api';
 
 export default function ChatRoom({ route, navigation }) {
-  const { roomName } = route.params;
+  const { roomName, roomId } = route.params;
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState([]);
   const [socket, setSocket] = useState(null);
-  const [inputContainerMargin, setInputContainerMargin] = useState(20);
-  const [isSettingsVisible, setIsSettingsVisible] = useState(false); // 설정 페이지 상태
-  const [selectedParticipant, setSelectedParticipant] = useState(null); // 선택된 사용자 상태
+  const [settingsVisible, setSettingsVisible] = useState(false);
   const flatListRef = useRef(null);
-
-  // 예제 참여자 목록
-  const [participants, setParticipants] = useState([
-    { name: '홍길동', profileImage: require('../assets/default-profile.png') },
-    { name: '김철수', profileImage: require('../assets/default-profile.png') },
-    { name: '박영희', profileImage: require('../assets/default-profile.png') },
-  ]);
-
-  const [ratings, setRatings] = useState({
-    홍길동: ['식사 매너를 잘 지켜요', '약속 시간을 잘 지켜요', '친절해요'],
-    김철수: ['식사 매너를 잘 지켜요', '약속 시간을 잘 지켜요', '친절해요'],
-    박영희: ['식사 매너를 잘 지켜요', '약속 시간을 잘 지켜요', '친절해요'],
-  });
+  const auth = getAuth();
 
   useEffect(() => {
-    const newSocket = new WebSocket('ws://yourserver.com/socket');
-    setSocket(newSocket);
-
-    newSocket.onmessage = (event) => {
-      const receivedMessage = JSON.parse(event.data);
-      setMessages((prevMessages) => [...prevMessages, receivedMessage]);
-    };
-
-    return () => newSocket.close();
-  }, []);
+    if (!roomId) return;
+    getRoomMessages(roomId)
+      .then(({ data }) => setMessages(data.map((m) => ({
+        id: m.id,
+        text: m.text,
+        sender: m.nickname,
+        userId: m.user_id,
+        timestamp: m.created_at,
+      }))))
+      .catch(() => {});
+  }, [roomId]);
 
   useEffect(() => {
-    const keyboardDidShowListener = Keyboard.addListener('keyboardDidShow', () =>
-      setInputContainerMargin(5)
-    );
-    const keyboardDidHideListener = Keyboard.addListener('keyboardDidHide', () =>
-      setInputContainerMargin(20)
-    );
+    if (!roomId || !auth.token) return;
+    const ws = new WebSocket(`${WS_URL}?token=${auth.token}&roomId=${roomId}`);
+    ws.onmessage = (e) => setMessages((prev) => [...prev, JSON.parse(e.data)]);
+    ws.onerror = () => Alert.alert('연결 오류', '채팅 서버에 연결할 수 없습니다.');
+    setSocket(ws);
+    return () => ws.close();
+  }, [roomId]);
 
-    return () => {
-      keyboardDidShowListener.remove();
-      keyboardDidHideListener.remove();
-    };
-  }, []);
-
-  // 방 나가기 함수
-  const leaveRoom = () => {
-    setIsSettingsVisible(false); // 설정 페이지 닫기
-    navigation.goBack(); // 이전 화면으로 이동
-  };
-
-  // 설정 버튼 클릭 시 설정
   useEffect(() => {
-    const rightHeader = () => (
-      <TouchableOpacity onPress={() => setIsSettingsVisible(true)}>
-        <Text style={{ color: '#007BFF', marginRight: 10 }}>목록</Text>
-      </TouchableOpacity>
-    );
-
     navigation.setOptions({
-      headerRight: rightHeader, // 콜백 함수가 navigation.setOptions 내에서 정의
+      headerRight: () => (
+        <TouchableOpacity onPress={() => setSettingsVisible(true)} style={{ marginRight: 16 }}>
+          <Ionicons name="people-outline" size={22} color="#ffaa00" />
+        </TouchableOpacity>
+      ),
     });
   }, [navigation]);
 
-  // 메시지 전송
   const sendMessage = () => {
-    if (message.trim() && socket) {
-      const newMessage = {
-        text: message,
-        sender: 'user',
-        timestamp: new Date().toISOString(),
-      };
-      socket.send(JSON.stringify(newMessage));
-      setMessages((prevMessages) => [...prevMessages, newMessage]);
-      setMessage('');
-      flatListRef.current.scrollToEnd({ animated: true });
-    }
+    if (!message.trim() || !socket || socket.readyState !== WebSocket.OPEN) return;
+    socket.send(JSON.stringify({ text: message }));
+    setMessage('');
+    flatListRef.current?.scrollToEnd({ animated: true });
   };
 
-  // 선택된 참여자에 대한 평가 모달 보여주기
-  const handleParticipantClick = (name) => {
-    setSelectedParticipant(name);
-  };
+  const isMe = (item) => item.userId === auth.userId;
 
   return (
     <KeyboardAvoidingView
@@ -107,104 +62,65 @@ export default function ChatRoom({ route, navigation }) {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 70}
     >
-      <Text style={styles.title}>{roomName} 채팅방</Text>
-
       <FlatList
         ref={flatListRef}
         data={messages}
-        keyExtractor={(item, index) => index.toString()}
+        keyExtractor={(item, i) => item.id?.toString() ?? i.toString()}
+        contentContainerStyle={styles.messageList}
+        showsVerticalScrollIndicator={false}
+        onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
         renderItem={({ item }) => (
-          <View
-            style={[
-              styles.messageContainer,
-              item.sender === 'user' ? styles.myMessage : styles.otherMessage,
-            ]}
-          >
-            <Text style={styles.messageText}>{item.text}</Text>
+          <View style={[styles.msgWrap, isMe(item) ? styles.msgWrapMe : styles.msgWrapOther]}>
+            {!isMe(item) && <Text style={styles.senderName}>{item.sender}</Text>}
+            <View style={[styles.bubble, isMe(item) ? styles.bubbleMe : styles.bubbleOther]}>
+              <Text style={[styles.bubbleText, isMe(item) && styles.bubbleTextMe]}>{item.text}</Text>
+            </View>
+            <Text style={[styles.timestamp, isMe(item) && { textAlign: 'right' }]}>
+              {item.timestamp ? new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+            </Text>
           </View>
         )}
-        onContentSizeChange={() => flatListRef.current.scrollToEnd({ animated: true })}
+        ListEmptyComponent={
+          <View style={styles.emptyChat}>
+            <Text style={styles.emptyChatText}>첫 메시지를 보내보세요! 👋</Text>
+          </View>
+        }
       />
 
-      {/* 메시지 입력창 */}
-      <View style={[styles.inputContainer, { marginBottom: inputContainerMargin }]}>
+      <View style={styles.inputBar}>
         <TextInput
           style={styles.input}
           value={message}
           onChangeText={setMessage}
-          placeholder="메시지 입력"
+          placeholder="메시지를 입력하세요"
+          placeholderTextColor="#bbb"
+          onSubmitEditing={sendMessage}
+          returnKeyType="send"
+          multiline={false}
         />
-        <TouchableOpacity style={styles.emojiContainer} onPress={sendMessage}>
-          <Text style={styles.emojiText}>{String.fromCodePoint(0x2191)}</Text>
+        <TouchableOpacity
+          style={[styles.sendBtn, !message.trim() && styles.sendBtnDisabled]}
+          onPress={sendMessage}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="arrow-up" size={20} color="#fff" />
         </TouchableOpacity>
       </View>
 
-      {/* 설정 페이지 */}
-      <Modal visible={isSettingsVisible} animationType="slide" transparent={true}>
-        <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>목록</Text>
-
-            {/* 참여 중인 사람 목록 */}
-            <Text style={styles.participantsTitle}>참여 중인 사람</Text>
-            <FlatList
-              data={participants}
-              keyExtractor={(item, index) => index.toString()}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={styles.participantItem}
-                  onPress={() => handleParticipantClick(item.name)}
-                >
-                  <Image
-                    source={item.profileImage}
-                    style={styles.profileImage}
-                  />
-                  <Text style={styles.participantName}>{item.name}</Text>
-                </TouchableOpacity>
-              )}
-              style={styles.participantsList}
-            />
-
-            {/* 방 나가기 버튼 */}
-            <TouchableOpacity style={styles.modalButton} onPress={leaveRoom}>
-              <Text style={styles.modalButtonText}>방 나가기</Text>
-            </TouchableOpacity>
-
-            {/* 닫기 버튼 */}
+      <Modal visible={settingsVisible} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <View style={styles.modalHandle} />
+            <Text style={styles.modalTitle}>{roomName}</Text>
             <TouchableOpacity
-              style={[styles.modalButton, { backgroundColor: '#ccc' }]}
-              onPress={() => setIsSettingsVisible(false)}
+              style={styles.leaveBtn}
+              onPress={() => { setSettingsVisible(false); navigation.goBack(); }}
             >
-              <Text style={styles.modalButtonText}>닫기</Text>
+              <Ionicons name="exit-outline" size={18} color="#ff4444" />
+              <Text style={styles.leaveBtnText}>방 나가기</Text>
             </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* 선택된 사용자의 평가 모달 */}
-      <Modal visible={selectedParticipant !== null} animationType="slide" transparent={true}>
-        <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>
-              {selectedParticipant}의 평가
-            </Text>
-
-            {/* 사용자 평가 */}
-            <FlatList
-              data={ratings[selectedParticipant] || []}
-              keyExtractor={(item, index) => index.toString()}
-              renderItem={({ item }) => (
-                <Text style={styles.participantRating}>{item}</Text>
-              )}
-              style={styles.participantsList}
-            />
-
-            {/* 닫기 버튼 */}
-            <TouchableOpacity
-              style={[styles.modalButton, { backgroundColor: '#ccc' }]}
-              onPress={() => setSelectedParticipant(null)}
-            >
-              <Text style={styles.modalButtonText}>닫기</Text>
+            <TouchableOpacity style={styles.closeBtn} onPress={() => setSettingsVisible(false)}>
+              <Text style={styles.closeBtnText}>닫기</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -214,119 +130,88 @@ export default function ChatRoom({ route, navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 10,
-    backgroundColor: 'white',
+  container: { flex: 1, backgroundColor: '#f8f8f8' },
+  messageList: { padding: 16, paddingBottom: 8 },
+  msgWrap: { marginBottom: 12 },
+  msgWrapMe: { alignItems: 'flex-end' },
+  msgWrapOther: { alignItems: 'flex-start' },
+  senderName: { fontSize: 12, color: '#aaa', marginBottom: 3, marginLeft: 4 },
+  bubble: {
+    maxWidth: '75%',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 18,
   },
-  title: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 10,
+  bubbleMe: {
+    backgroundColor: '#ffaa00',
+    borderBottomRightRadius: 4,
   },
-  messageContainer: {
-    padding: 10,
-    marginVertical: 5,
-    borderRadius: 10,
-    backgroundColor: '#f1f1f1',
-    alignSelf: 'flex-start',
-    maxWidth: '80%',
+  bubbleOther: {
+    backgroundColor: '#fff',
+    borderBottomLeftRadius: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 1,
   },
-  myMessage: {
-    alignSelf: 'flex-end',
-    backgroundColor: '#dcf8c6',
-  },
-  otherMessage: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#f1f1f1',
-  },
-  messageText: {
-    fontSize: 16,
-    color: '#333',
-  },
-  inputContainer: {
+  bubbleText: { fontSize: 15, color: '#1a1a1a', lineHeight: 20 },
+  bubbleTextMe: { color: '#fff' },
+  timestamp: { fontSize: 11, color: '#ccc', marginTop: 3, marginHorizontal: 4 },
+  emptyChat: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 80 },
+  emptyChatText: { color: '#bbb', fontSize: 14 },
+  inputBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: '#fff',
     borderTopWidth: 1,
-    borderColor: '#ddd',
-    backgroundColor: 'white',
+    borderTopColor: '#eee',
+    gap: 8,
   },
   input: {
     flex: 1,
-    height: 40,
-    borderColor: 'gray',
-    borderWidth: 1,
-    paddingHorizontal: 10,
-    marginRight: 10,
-    borderRadius: 10,
+    height: 42,
+    backgroundColor: '#f4f4f4',
+    borderRadius: 21,
+    paddingHorizontal: 16,
+    fontSize: 15,
+    color: '#1a1a1a',
   },
-  emojiContainer: {
-    width: 40,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 20,
+  sendBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     backgroundColor: '#ffaa00',
-  },
-  emojiText: {
-    fontSize: 20,
-    color: 'white',
-  },
-  modalContainer: {
-    flex: 1,
-    justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
   },
-  modalContent: {
-    width: '80%',
-    padding: 20,
-    backgroundColor: 'white',
-    borderRadius: 10,
+  sendBtnDisabled: { backgroundColor: '#ddd' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+  modalBox: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 24,
+    paddingBottom: 40,
+    alignItems: 'center',
   },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 10,
-    textAlign: 'center',
-  },
-  participantsTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginVertical: 10,
-  },
-  participantsList: {
-    maxHeight: 200,
-  },
-  participantItem: {
+  modalHandle: { width: 40, height: 4, backgroundColor: '#eee', borderRadius: 2, marginBottom: 20 },
+  modalTitle: { fontSize: 18, fontWeight: 'bold', color: '#1a1a1a', marginBottom: 24 },
+  leaveBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: 10,
+    gap: 8,
+    width: '100%',
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    backgroundColor: '#fff0f0',
+    borderRadius: 12,
+    marginBottom: 10,
+    justifyContent: 'center',
   },
-  profileImage: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    marginRight: 10,
-  },
-  participantName: {
-    fontSize: 16,
-  },
-  participantRating: {
-    fontSize: 14,
-    color: '#555',
-    marginVertical: 5,
-  },
-  modalButton: {
-    padding: 10,
-    backgroundColor: '#007BFF',
-    marginVertical: 5,
-    alignItems: 'center',
-    borderRadius: 5,
-  },
-  modalButtonText: {
-    color: 'white',
-    fontSize: 16,
-  },
+  leaveBtnText: { color: '#ff4444', fontWeight: 'bold', fontSize: 16 },
+  closeBtn: { width: '100%', paddingVertical: 14, alignItems: 'center', borderRadius: 12, backgroundColor: '#f4f4f4' },
+  closeBtnText: { color: '#888', fontSize: 15, fontWeight: '600' },
 });

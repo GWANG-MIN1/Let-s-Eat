@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Bash(node -e \"require\\('./db'\\); console.log\\('DB OK'\\)\")",
+      "Bash(node index.js)",
+      "Bash(curl -s http://localhost:3000/health)",
+      "Bash(curl -s -X POST http://localhost:3000/api/auth/signup -H \"Content-Type: application/json\" -d \"{\\\\\"username\\\\\":\\\\\"test1\\\\\",\\\\\"password\\\\\":\\\\\"pass123\\\\\",\\\\\"nickname\\\\\":\\\\\"테스터\\\\\"}\")",
+      "Bash(kill %1)",
+      "Bash(exit 0)",
+      "Bash(taskkill /f /im node.exe)",
+      "PowerShell(Stop-Process *)",
+      "Bash(node test_chat.js)",
+      "Bash(node -e ' *)"
+    ]
+  }
+}

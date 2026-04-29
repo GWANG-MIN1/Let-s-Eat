@@ -1,90 +1,63 @@
-import React, { useState, useEffect } from 'react';
-import { Modal, View, Text, TouchableOpacity, StyleSheet, ScrollView, TextInput } from 'react-native';
-
+import React, { useState, useMemo } from 'react';
+import { Modal, View, Text, TouchableOpacity, StyleSheet, FlatList, TextInput } from 'react-native';
+import UNIVERSITIES from './universities';
 
 const ModalComponent = ({ modalVisible, setModalVisible, onSelectUniversity }) => {
-  const [universities, setUniversities] = useState([]);
-
-  // 검색창에 쓴 내가 찾는 대학
   const [searchQuery, setSearchQuery] = useState('');
 
-  // 검색 조건에 맞는 대학 리스트
-  const [filteredUniversities, setFilteredUniversities] = useState([]);
+  const filtered = useMemo(() => {
+    const q = searchQuery.trim();
+    if (!q) return UNIVERSITIES;
+    return UNIVERSITIES.filter((name) => name.includes(q));
+  }, [searchQuery]);
 
-  useEffect(() => {
-    async function getData() {
-      const url = `http://www.career.go.kr/cnet/openapi/getOpenApi?apiKey=${API_KEY}&svcType=api&svcCode=SCHOOL&contentType=json&gubun=univ_list&thisPage=1&perPage=500`;
-      
-      try {
-        const response = await fetch(url);
-        const jsonResponse = await response.json();
-        const universityList = jsonResponse.dataSearch.content;
-
-        setUniversities(universityList); // 대학 목록을 state에 저장
-        setFilteredUniversities(universityList);
-      } catch (error) {
-        console.error('데이터 가져오기 오류:', error);
-      }
-    }
-
-    getData();
-  }, []);  // 첫 로드 시 API 호출
-
-    // 검색어가 변경될 때마다 필터링을 업데이트
-    useEffect(() => {
-        const filteredData = universities.filter((univ) =>
-          univ.schoolName.includes(searchQuery)
-        );
-        setFilteredUniversities(filteredData);
-      }, [searchQuery, universities]);
+  const handleClose = () => {
+    setSearchQuery('');
+    setModalVisible(false);
+  };
 
   return (
     <Modal
       animationType="slide"
       transparent={true}
       visible={modalVisible}
-      onRequestClose={() => setModalVisible(false)}
+      onRequestClose={handleClose}
     >
       <View style={styles.modalContainer}>
         <View style={styles.modalContent}>
-          <Text>대학교를 선택하세요</Text>
-          
-              {/* 검색창 */}
+          <Text style={styles.title}>대학교를 선택하세요</Text>
+
           <TextInput
             style={styles.searchInput}
             placeholder="대학교 검색"
-            placeholderTextColor="#ccc"
+            placeholderTextColor="#aaa"
             value={searchQuery}
-            onChangeText={(text) => setSearchQuery(text)}
+            onChangeText={setSearchQuery}
+            autoFocus={false}
           />
 
-          {/* 대학교 목록을 표시 */}
-          <View style={styles.scrollContainer}>
-            <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-                {universities
-                    .filter((univ) =>
-                        univ.schoolName.includes(searchQuery)
-                    ) // 검색어와 부분 일치하는 대학만 필터링
-                    .map((univ, index) => (
-                        /* 누르면 대학이 회원가입 페이지의 대학교 선택에 들어가야 함 */
-                        <TouchableOpacity 
-                            style={styles.listBox}
-                            onPress={() => onSelectUniversity(univ.schoolName)}
-                        >
-                            <Text key={index} style={styles.universityText}>
-                                {univ.schoolName}
-                            </Text>
-                        </TouchableOpacity>
-                ))}
-            </ScrollView>
-          </View>
+          <FlatList
+            data={filtered}
+            keyExtractor={(item) => item}
+            style={styles.list}
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                style={styles.listItem}
+                onPress={() => {
+                  onSelectUniversity(item);
+                  handleClose();
+                }}
+              >
+                <Text style={styles.universityText}>{item}</Text>
+              </TouchableOpacity>
+            )}
+            ListEmptyComponent={
+              <Text style={styles.emptyText}>검색 결과가 없습니다.</Text>
+            }
+          />
 
-          {/* 닫기 버튼 */}
-          <TouchableOpacity
-            style={styles.closeButton}
-            onPress={() => setModalVisible(false)}
-          >
-            <Text style={styles.buttonText}>닫기</Text>
+          <TouchableOpacity style={styles.closeButton} onPress={handleClose}>
+            <Text style={styles.closeButtonText}>닫기</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -100,54 +73,61 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
   },
   modalContent: {
-    width: 300,
-    height: '50%',
-    padding: 20,
+    width: '85%',
+    height: '65%',
     backgroundColor: 'white',
-    borderRadius: 10,
-    alignItems: 'center',
+    borderRadius: 12,
+    padding: 20,
+  },
+  title: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 12,
   },
   searchInput: {
-    width: '100%',
-    height: 40,
+    height: 42,
     borderColor: '#ccc',
     borderWidth: 1,
-    borderRadius: 5,
-    paddingHorizontal: 10,
+    borderRadius: 8,
+    paddingHorizontal: 12,
     marginBottom: 10,
-    marginTop: 20,
+    fontSize: 15,
   },
-  scrollContainer: {
-    width: '100%',
-    height: '65%',
-    borderColor: '#ccc',
+  list: {
+    flex: 1,
+    borderColor: '#eee',
     borderWidth: 1,
-    borderRadius: 5,
+    borderRadius: 8,
   },
-  scrollView: {
-    height: '100%',
+  listItem: {
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
   },
   universityText: {
-    fontSize: 16,
-    paddingVertical: 10,
-    paddingHorizontal: 10,
+    fontSize: 15,
+    color: '#333',
+  },
+  emptyText: {
+    textAlign: 'center',
+    marginTop: 20,
+    color: '#aaa',
+    fontSize: 14,
   },
   closeButton: {
-    position: 'absolute',
-    bottom: 10,
-    backgroundColor: 'white',
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 5,
+    marginTop: 12,
+    paddingVertical: 12,
+    borderRadius: 8,
     borderWidth: 1,
     borderColor: '#ffaa00',
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'transparent',
   },
-  buttonText: {
+  closeButtonText: {
     color: '#ffaa00',
-    fontSize: 16,
+    fontSize: 15,
+    fontWeight: '600',
   },
 });
 
